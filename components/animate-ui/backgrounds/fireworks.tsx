@@ -1,0 +1,830 @@
+"use client";
+
+import * as React from "react";
+
+import { cn } from "@/lib/utils";
+
+const rand = (
+  min: number,
+  max: number
+): number =>
+  Math.random() * (max - min) + min;
+
+const randInt = (
+  min: number,
+  max: number
+): number =>
+  Math.floor(
+    Math.random() * (max - min) + min
+  );
+
+const randColor = (): string =>
+  `hsl(${randInt(0, 360)}, 100%, 50%)`;
+
+const PINK_GLOW =
+  "rgba(255, 128, 192, 0.7)";
+const AN_TEXT = "AN";
+const AN_FONT = "bold 120px Arial";
+const AN_PARTICLE_SIZE = 7;
+const AN_PARTICLE_COUNT = 350; // Adjust for density
+
+type ParticleType = {
+  x: number;
+  y: number;
+  color: string;
+  speed: number;
+  direction: number;
+  vx: number;
+  vy: number;
+  gravity: number;
+  friction: number;
+  alpha: number;
+  decay: number;
+  size: number;
+  update: () => void;
+  draw: (
+    ctx: CanvasRenderingContext2D
+  ) => void;
+  isAlive: () => boolean;
+};
+
+function createParticle(
+  x: number,
+  y: number,
+  color: string,
+  speed: number,
+  direction: number,
+  gravity: number,
+  friction: number,
+  size: number
+): ParticleType {
+  const vx =
+    Math.cos(direction) * speed;
+  const vy =
+    Math.sin(direction) * speed;
+  const alpha = 1;
+  const decay = rand(0.005, 0.02);
+
+  return {
+    x,
+    y,
+    color,
+    speed,
+    direction,
+    vx,
+    vy,
+    gravity,
+    friction,
+    alpha,
+    decay,
+    size,
+    update() {
+      this.vx *= this.friction;
+      this.vy *= this.friction;
+      this.vy += this.gravity;
+      this.x += this.vx;
+      this.y += this.vy;
+      this.alpha -= this.decay;
+    },
+    draw(
+      ctx: CanvasRenderingContext2D
+    ) {
+      ctx.save();
+      ctx.globalAlpha = this.alpha;
+      ctx.beginPath();
+      ctx.arc(
+        this.x,
+        this.y,
+        this.size,
+        0,
+        Math.PI * 2
+      );
+      ctx.fillStyle = this.color;
+      ctx.fill();
+      ctx.restore();
+    },
+    isAlive() {
+      return this.alpha > 0;
+    },
+  };
+}
+
+type FireworkType = {
+  x: number;
+  y: number;
+  targetY: number;
+  color: string;
+  speed: number;
+  size: number;
+  angle: number;
+  vx: number;
+  vy: number;
+  trail: { x: number; y: number }[];
+  trailLength: number;
+  exploded: boolean;
+  update: () => boolean;
+  explode: () => void;
+  draw: (
+    ctx: CanvasRenderingContext2D
+  ) => void;
+};
+
+function createFirework(
+  x: number,
+  y: number,
+  targetY: number,
+  color: string,
+  speed: number,
+  size: number,
+  particleSpeed:
+    | { min: number; max: number }
+    | number,
+  particleSize:
+    | { min: number; max: number }
+    | number,
+  onExplode: (
+    particles: ParticleType[]
+  ) => void
+): FireworkType {
+  const angle =
+    -Math.PI / 2 + rand(-0.3, 0.3);
+  const vx = Math.cos(angle) * speed;
+  const vy = Math.sin(angle) * speed;
+  const trail: {
+    x: number;
+    y: number;
+  }[] = [];
+  const trailLength = randInt(10, 25);
+
+  return {
+    x,
+    y,
+    targetY,
+    color,
+    speed,
+    size,
+    angle,
+    vx,
+    vy,
+    trail,
+    trailLength,
+    exploded: false,
+    update() {
+      this.trail.push({
+        x: this.x,
+        y: this.y,
+      });
+      if (
+        this.trail.length >
+        this.trailLength
+      ) {
+        this.trail.shift();
+      }
+      this.x += this.vx;
+      this.y += this.vy;
+      this.vy += 0.02;
+      if (
+        this.vy >= 0 ||
+        this.y <= this.targetY
+      ) {
+        this.explode();
+        return false;
+      }
+      return true;
+    },
+    explode() {
+      const numParticles = randInt(
+        50,
+        150
+      );
+      const particles: ParticleType[] =
+        [];
+      const scale = 6; // Adjust for heart size
+      for (
+        let i = 0;
+        i < numParticles;
+        i++
+      ) {
+        // Distribute t evenly for a full heart
+        const t =
+          (Math.PI * 2 * i) /
+          numParticles;
+        // Heart parametric equations
+        const heartX =
+          16 * Math.pow(Math.sin(t), 3);
+        const heartY =
+          13 * Math.cos(t) -
+          5 * Math.cos(2 * t) -
+          2 * Math.cos(3 * t) -
+          Math.cos(4 * t);
+
+        // Normalize and scale
+        const dirX = heartX * scale;
+        const dirY = -heartY * scale; // Negative to orient heart upright
+
+        // Particle speed and size
+        const localParticleSpeed =
+          getValueByRange(
+            particleSpeed
+          );
+        const localParticleSize =
+          getValueByRange(particleSize);
+
+        // Calculate direction and speed
+        const angle = Math.atan2(
+          dirY,
+          dirX
+        );
+        // Optionally, use the vector's length for speed variation
+        const speed =
+          localParticleSpeed;
+
+        particles.push(
+          createParticle(
+            this.x,
+            this.y,
+            this.color,
+            speed,
+            angle,
+            0.05,
+            0.98,
+            localParticleSize
+          )
+        );
+      }
+      onExplode(particles);
+    },
+    draw(
+      ctx: CanvasRenderingContext2D
+    ) {
+      ctx.save();
+      ctx.beginPath();
+      if (this.trail.length > 1) {
+        ctx.moveTo(
+          this.trail[0]?.x ?? this.x,
+          this.trail[0]?.y ?? this.y
+        );
+        for (const point of this
+          .trail) {
+          ctx.lineTo(point.x, point.y);
+        }
+      } else {
+        ctx.moveTo(this.x, this.y);
+        ctx.lineTo(this.x, this.y);
+      }
+      ctx.strokeStyle = this.color;
+      ctx.lineWidth = this.size;
+      ctx.lineCap = "round";
+      ctx.stroke();
+      ctx.restore();
+    },
+  };
+}
+
+function getValueByRange(
+  range:
+    | { min: number; max: number }
+    | number
+): number {
+  if (typeof range === "number") {
+    return range;
+  }
+  return rand(range.min, range.max);
+}
+
+function getColor(
+  color: string | string[] | undefined
+): string {
+  if (Array.isArray(color)) {
+    return (
+      color[randInt(0, color.length)] ??
+      randColor()
+    );
+  }
+  return color ?? randColor();
+}
+
+// Helper to get pixel positions for "AN"
+function getTextShapePositions(
+  text: string,
+  font: string,
+  width: number,
+  height: number,
+  count: number
+) {
+  // Create offscreen canvas
+  const canvas =
+    document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d")!;
+  ctx.clearRect(0, 0, width, height);
+  ctx.font = font;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#fff";
+  ctx.fillText(
+    text,
+    width / 2,
+    height / 2
+  );
+
+  const imageData = ctx.getImageData(
+    0,
+    0,
+    width,
+    height
+  );
+  const positions: {
+    x: number;
+    y: number;
+  }[] = [];
+  for (let y = 0; y < height; y += 2) {
+    for (let x = 0; x < width; x += 2) {
+      const idx = (y * width + x) * 4;
+      if (
+        imageData.data[idx + 3] > 128
+      ) {
+        positions.push({ x, y });
+      }
+    }
+  }
+  // Randomly sample 'count' positions
+  const sampled = [];
+  for (let i = 0; i < count; i++) {
+    sampled.push(
+      positions[
+        Math.floor(
+          Math.random() *
+            positions.length
+        )
+      ]
+    );
+  }
+  return sampled;
+}
+
+// Draw a glowing heart at (x, y)
+function drawGlowingHeart(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+  glowColor: string,
+  fillColor: string,
+  alpha: number
+) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.shadowColor = glowColor;
+  ctx.shadowBlur = size * 2.5;
+  ctx.translate(x, y);
+  ctx.scale(size / 16, size / 16);
+  ctx.beginPath();
+  // Heart parametric path
+  for (
+    let t = 0;
+    t <= Math.PI * 2;
+    t += 0.05
+  ) {
+    const hx =
+      16 * Math.pow(Math.sin(t), 3);
+    const hy =
+      13 * Math.cos(t) -
+      5 * Math.cos(2 * t) -
+      2 * Math.cos(3 * t) -
+      Math.cos(4 * t);
+    if (t === 0) ctx.moveTo(hx, -hy);
+    else ctx.lineTo(hx, -hy);
+  }
+  ctx.closePath();
+  ctx.fillStyle = fillColor;
+  ctx.fill();
+  ctx.restore();
+}
+
+// Special particle for "AN" hearts
+function createLetterParticle(
+  x: number,
+  y: number,
+  color: string,
+  size: number
+): ParticleType {
+  const jitter = () =>
+    (Math.random() - 0.5) * 2;
+  let alpha = 1;
+  const decay = rand(0.008, 0.018);
+  return {
+    x,
+    y,
+    color,
+    speed: 0,
+    direction: 0,
+    vx: 0,
+    vy: 0,
+    gravity: 0,
+    friction: 1,
+    alpha,
+    decay,
+    size,
+    update() {
+      // Jitter around the original position
+      this.x += jitter();
+      this.y += jitter();
+      this.alpha -= this.decay;
+    },
+    draw(ctx) {
+      drawGlowingHeart(
+        ctx,
+        this.x,
+        this.y,
+        this.size,
+        PINK_GLOW,
+        "#ff8fcf",
+        this.alpha
+      );
+    },
+    isAlive() {
+      return this.alpha > 0;
+    },
+  };
+}
+
+type FireworksBackgroundProps = Omit<
+  React.ComponentProps<"div">,
+  "color"
+> & {
+  canvasProps?: React.ComponentProps<"canvas">;
+  population?: number;
+  color?: string | string[];
+  fireworkSpeed?:
+    | { min: number; max: number }
+    | number;
+  fireworkSize?:
+    | { min: number; max: number }
+    | number;
+  particleSpeed?:
+    | { min: number; max: number }
+    | number;
+  particleSize?:
+    | { min: number; max: number }
+    | number;
+};
+
+function FireworksBackground({
+  ref,
+  className,
+  canvasProps,
+  population = 1,
+  color,
+  fireworkSpeed = { min: 4, max: 8 },
+  fireworkSize = { min: 2, max: 5 },
+  particleSpeed = { min: 2, max: 7 },
+  particleSize = { min: 1, max: 5 },
+  ...props
+}: FireworksBackgroundProps) {
+  const canvasRef =
+    React.useRef<HTMLCanvasElement>(
+      null
+    );
+  const containerRef =
+    React.useRef<HTMLDivElement>(null);
+  React.useImperativeHandle(
+    ref,
+    () =>
+      containerRef.current as HTMLDivElement
+  );
+
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    const container =
+      containerRef.current;
+    if (!canvas || !container) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let maxX = window.innerWidth;
+    let ratio =
+      container.offsetHeight /
+      container.offsetWidth;
+    let maxY = maxX * ratio;
+    canvas.width = maxX;
+    canvas.height = maxY;
+
+    // Track if "AN" explosion has occurred
+    let anExploded = false;
+    let anPositions: {
+      x: number;
+      y: number;
+    }[] = [];
+
+    const setCanvasSize = () => {
+      maxX = window.innerWidth;
+      ratio =
+        container.offsetHeight /
+        container.offsetWidth;
+      maxY = maxX * ratio;
+      canvas.width = maxX;
+      canvas.height = maxY;
+    };
+    window.addEventListener(
+      "resize",
+      setCanvasSize
+    );
+
+    const explosions: ParticleType[] =
+      [];
+    const fireworks: FireworkType[] =
+      [];
+
+    const handleExplosion = (
+      particles: ParticleType[]
+    ) => {
+      explosions.push(...particles);
+    };
+
+    const launchFirework = () => {
+      const x = rand(
+        maxX * 0.1,
+        maxX * 0.9
+      );
+      const y = maxY;
+      const targetY = rand(
+        maxY * 0.1,
+        maxY * 0.4
+      );
+      const fireworkColor =
+        getColor(color);
+      const speed = getValueByRange(
+        fireworkSpeed
+      );
+      const size = getValueByRange(
+        fireworkSize
+      );
+      fireworks.push(
+        createFirework(
+          x,
+          y,
+          targetY,
+          fireworkColor,
+          speed,
+          size,
+          particleSpeed,
+          particleSize,
+          handleExplosion
+        )
+      );
+      const timeout =
+        rand(300, 800) / population;
+      setTimeout(
+        launchFirework,
+        timeout
+      );
+    };
+
+    launchFirework();
+
+    // --- Schedule "AN" explosion at 8s with smooth scaling effect ---
+    let anScale = 0.2; // Start small
+    let anScaleTarget = 1;
+    let anScaleStartTime = 0;
+    let anAnimating = false;
+    let lastANParticlesTime = 0;
+    let lastANScale = 0;
+
+    // Cache AN positions for each scale to avoid redundant canvas work
+    const anPositionsCache: Record<
+      string,
+      { x: number; y: number }[]
+    > = {};
+
+    // Instead of constantly adding new particles, keep a persistent set and just update/draw them
+    let anParticles: ParticleType[] =
+      [];
+    let anCurrentScale = 0.2;
+
+    function getCachedANPositions(
+      scale: number
+    ) {
+      const key = scale.toFixed(3);
+      if (anPositionsCache[key])
+        return anPositionsCache[key];
+      const textW = Math.floor(
+        maxX * 1.5 * scale
+      );
+      const textH = Math.floor(
+        maxY * 1.0 * scale
+      );
+      const positions =
+        getTextShapePositions(
+          AN_TEXT,
+          AN_FONT,
+          textW,
+          textH,
+          AN_PARTICLE_COUNT
+        );
+      // Center offset
+      const offsetX =
+        (maxX - textW) / 2;
+      const offsetY =
+        (maxY - textH) / 2;
+      const offsetPositions =
+        positions.map((pos) => ({
+          x: pos.x + offsetX,
+          y: pos.y + offsetY,
+        }));
+      anPositionsCache[key] =
+        offsetPositions;
+      return offsetPositions;
+    }
+
+    function createPersistentANParticles(
+      scale = 1
+    ) {
+      const positions =
+        getCachedANPositions(scale);
+      // Only create new particles if not already present or scale changed
+      anParticles = positions.map(
+        (pos) =>
+          createLetterParticle(
+            pos.x,
+            pos.y,
+            "#ff8fcf",
+            AN_PARTICLE_SIZE * scale
+          )
+      );
+      anCurrentScale = scale;
+    }
+
+    setTimeout(() => {
+      anExploded = true;
+      anScale = 0.2;
+      anScaleTarget = 1;
+      anScaleStartTime =
+        performance.now();
+      anAnimating = true;
+      createPersistentANParticles(
+        anScale
+      );
+    }, 8000);
+
+    let animationFrameId: number;
+    const animate = () => {
+      ctx.clearRect(0, 0, maxX, maxY);
+
+      // Remove dead fireworks in-place
+      for (
+        let i = fireworks.length - 1;
+        i >= 0;
+        i--
+      ) {
+        const firework = fireworks[i];
+        if (!firework?.update()) {
+          fireworks.splice(i, 1);
+        } else {
+          firework.draw(ctx);
+        }
+      }
+
+      // Animate AN scaling
+      if (anExploded) {
+        if (anAnimating) {
+          const elapsed =
+            (performance.now() -
+              anScaleStartTime) /
+            1000;
+          if (elapsed < 5) {
+            anScale =
+              0.2 +
+              (anScaleTarget - 0.2) *
+                (elapsed / 5);
+          } else {
+            anScale = anScaleTarget;
+            anAnimating = false;
+          }
+        }
+        // Only recreate AN particles if scale changed significantly
+        if (
+          Math.abs(
+            anScale - anCurrentScale
+          ) > 0.01
+        ) {
+          createPersistentANParticles(
+            anScale
+          );
+        }
+        // Update/draw persistent AN particles (no decay, just jitter)
+        for (
+          let i = 0;
+          i < anParticles.length;
+          i++
+        ) {
+          anParticles[i].update();
+          anParticles[i].alpha = 1; // Prevent fade out
+          anParticles[i].draw(ctx);
+        }
+      }
+
+      // Remove dead explosions in-place
+      for (
+        let i = explosions.length - 1;
+        i >= 0;
+        i--
+      ) {
+        const particle = explosions[i];
+        particle?.update();
+        if (particle?.isAlive()) {
+          particle.draw(ctx);
+        } else {
+          explosions.splice(i, 1);
+        }
+      }
+
+      animationFrameId =
+        requestAnimationFrame(animate);
+    };
+
+    animate();
+
+    const handleClick = (
+      event: MouseEvent
+    ) => {
+      const x = event.clientX;
+      const y = maxY;
+      const targetY = event.clientY;
+      const fireworkColor =
+        getColor(color);
+      const speed = getValueByRange(
+        fireworkSpeed
+      );
+      const size = getValueByRange(
+        fireworkSize
+      );
+      fireworks.push(
+        createFirework(
+          x,
+          y,
+          targetY,
+          fireworkColor,
+          speed,
+          size,
+          particleSpeed,
+          particleSize,
+          handleExplosion
+        )
+      );
+    };
+
+    container.addEventListener(
+      "click",
+      handleClick
+    );
+
+    return () => {
+      window.removeEventListener(
+        "resize",
+        setCanvasSize
+      );
+      container.removeEventListener(
+        "click",
+        handleClick
+      );
+      cancelAnimationFrame(
+        animationFrameId
+      );
+    };
+  }, [
+    population,
+    color,
+    fireworkSpeed,
+    fireworkSize,
+    particleSpeed,
+    particleSize,
+  ]);
+
+  return (
+    <div
+      ref={containerRef}
+      data-slot="fireworks-background"
+      className={cn(
+        "relative size-full overflow-hidden",
+        className
+      )}
+      {...props}
+    >
+      <canvas
+        {...canvasProps}
+        ref={canvasRef}
+        className={cn(
+          "absolute inset-0 size-full",
+          canvasProps?.className
+        )}
+      />
+    </div>
+  );
+}
+
+export {
+  FireworksBackground,
+  type FireworksBackgroundProps,
+};
