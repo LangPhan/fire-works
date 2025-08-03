@@ -27,6 +27,8 @@ const AN_TEXT = "AN";
 const AN_FONT = "bold 120px Arial";
 const AN_PARTICLE_SIZE = 7;
 const AN_PARTICLE_COUNT = 350; // Adjust for density
+const HEART_ORBIT_COUNT = 12; // Number of orbiting hearts
+const HEART_ORBIT_RADIUS = 200; // Base radius for heart orbit
 
 type ParticleType = {
   x: number;
@@ -194,22 +196,24 @@ function createFirework(
     },
     explode() {
       const numParticles = randInt(
-        50,
-        150
+        80,
+        200
       );
       const particles: ParticleType[] =
         [];
-      const scale = 6; // Adjust for heart size
+      const scale = 8; // Increased scale for bigger heart
+
       for (
         let i = 0;
         i < numParticles;
         i++
       ) {
-        // Distribute t evenly for a full heart
+        // Distribute t evenly for a full heart with better coverage
         const t =
           (Math.PI * 2 * i) /
           numParticles;
-        // Heart parametric equations
+
+        // Enhanced heart parametric equations for better shape
         const heartX =
           16 * Math.pow(Math.sin(t), 3);
         const heartY =
@@ -218,26 +222,39 @@ function createFirework(
           2 * Math.cos(3 * t) -
           Math.cos(4 * t);
 
-        // Normalize and scale
-        const dirX = heartX * scale;
-        const dirY = -heartY * scale; // Negative to orient heart upright
+        // Add some randomness for more natural explosion
+        const randomOffset = rand(
+          0.8,
+          1.2
+        );
+        const dirX =
+          heartX * scale * randomOffset;
+        const dirY =
+          -heartY *
+          scale *
+          randomOffset; // Negative to orient heart upright
 
-        // Particle speed and size
+        // Particle speed and size with heart-based variation
         const localParticleSpeed =
           getValueByRange(
             particleSpeed
-          );
+          ) * rand(0.7, 1.3);
         const localParticleSize =
           getValueByRange(particleSize);
 
-        // Calculate direction and speed
+        // Calculate direction from center to heart position
+        const distance = Math.sqrt(
+          dirX * dirX + dirY * dirY
+        );
         const angle = Math.atan2(
           dirY,
           dirX
         );
-        // Optionally, use the vector's length for speed variation
+
+        // Speed varies with distance for more realistic effect
         const speed =
-          localParticleSpeed;
+          localParticleSpeed *
+          (distance / (scale * 16));
 
         particles.push(
           createParticle(
@@ -246,8 +263,8 @@ function createFirework(
             this.color,
             speed,
             angle,
-            0.05,
-            0.98,
+            0.04, // Slightly less gravity for better heart visibility
+            0.985, // Less friction for longer trails
             localParticleSize
           )
         );
@@ -403,6 +420,134 @@ function drawGlowingHeart(
   ctx.restore();
 }
 
+// Draw a large heart outline
+function drawLargeHeartOutline(
+  ctx: CanvasRenderingContext2D,
+  centerX: number,
+  centerY: number,
+  scale: number,
+  color: string,
+  alpha: number,
+  lineWidth: number = 6
+) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 30; // Increased glow
+  ctx.translate(centerX, centerY);
+  ctx.scale(scale, scale);
+
+  ctx.beginPath();
+  // Heart parametric path
+  for (
+    let t = 0;
+    t <= Math.PI * 2;
+    t += 0.02
+  ) {
+    const hx =
+      16 * Math.pow(Math.sin(t), 3);
+    const hy =
+      13 * Math.cos(t) -
+      5 * Math.cos(2 * t) -
+      2 * Math.cos(3 * t) -
+      Math.cos(4 * t);
+    if (t === 0) ctx.moveTo(hx, -hy);
+    else ctx.lineTo(hx, -hy);
+  }
+  ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Create heart particle for outline effect
+function createHeartOutlineParticle(
+  x: number,
+  y: number,
+  angle: number,
+  scale: number,
+  startTime: number = 0 // Add startTime parameter for fade-in effect
+): ParticleType {
+  const originalX = x; // Store original position like AN particles
+  const originalY = y;
+  const baseSize = 6; // Store base size for pulsing
+  const jitter = () =>
+    (Math.random() - 0.5) * 1.0; // Similar jitter to AN
+
+  return {
+    x,
+    y,
+    color: "#ff69b4",
+    speed: 0,
+    direction: angle,
+    vx: 0,
+    vy: 0,
+    gravity: 0,
+    friction: 1,
+    alpha: 0, // Start with 0 alpha for fade-in
+    decay: 0,
+    size: baseSize,
+    update() {
+      // Jitter effect similar to AN particles
+      this.x = originalX + jitter();
+      this.y = originalY + jitter();
+
+      // Fade-in effect based on elapsed time since start
+      const elapsed =
+        (performance.now() -
+          startTime) /
+        1000;
+      const fadeInDuration = 5; // Same as AN scaling duration
+
+      if (elapsed < fadeInDuration) {
+        // Gradual fade-in during the first 5 seconds
+        const fadeProgress =
+          elapsed / fadeInDuration;
+        const baseAlpha =
+          fadeProgress * 0.8; // Max alpha of 0.8
+
+        // Add synchronized pulse effect during fade-in
+        const time =
+          performance.now() * 0.002; // Same frequency as AN
+        const pulseFactor =
+          1 + Math.sin(time) * 0.2; // Gentle pulse
+        this.alpha =
+          baseAlpha * pulseFactor;
+        this.size =
+          baseSize *
+          (1 + Math.sin(time) * 0.3); // Size pulse synchronized with AN
+      } else {
+        // Synchronized pulse effect after fade-in (same as AN particles)
+        const time =
+          performance.now() * 0.002;
+        const pulseAlpha =
+          0.8 + Math.sin(time) * 0.2; // Alpha pulse between 0.6 and 1.0
+        const pulseSize =
+          1 + Math.sin(time) * 0.3; // Size pulse between 70% and 130%
+
+        this.alpha = pulseAlpha;
+        this.size =
+          baseSize * pulseSize;
+      }
+    },
+    draw(ctx) {
+      drawGlowingHeart(
+        ctx,
+        this.x,
+        this.y,
+        this.size,
+        PINK_GLOW, // Use same glow as AN
+        "#ff69b4",
+        this.alpha
+      );
+    },
+    isAlive() {
+      return true;
+    },
+  };
+}
+
 // Special particle for "AN" hearts
 function createLetterParticle(
   x: number,
@@ -410,10 +555,13 @@ function createLetterParticle(
   color: string,
   size: number
 ): ParticleType {
+  const originalX = x; // Store original position
+  const originalY = y;
+  const baseSize = size; // Store original size for pulsing
   const jitter = () =>
-    (Math.random() - 0.5) * 2;
+    (Math.random() - 0.5) * 0.5; // Reduced jitter for stability
   let alpha = 1;
-  const decay = rand(0.008, 0.018);
+  const decay = 0; // No decay for persistent letters
   return {
     x,
     y,
@@ -428,10 +576,18 @@ function createLetterParticle(
     decay,
     size,
     update() {
-      // Jitter around the original position
-      this.x += jitter();
-      this.y += jitter();
-      this.alpha -= this.decay;
+      // Very subtle jitter around the original position
+      this.x = originalX + jitter();
+      this.y = originalY + jitter();
+
+      // Synchronized pulse effect with heart outline
+      const time =
+        performance.now() * 0.002; // Slower pulse frequency
+      const pulseScale =
+        1 + Math.sin(time) * 0.3; // Pulse between 70% and 130%
+      this.size = baseSize * pulseScale;
+      this.alpha =
+        0.8 + Math.sin(time) * 0.2; // Alpha pulse between 0.6 and 1.0
     },
     draw(ctx) {
       drawGlowingHeart(
@@ -446,6 +602,105 @@ function createLetterParticle(
     },
     isAlive() {
       return this.alpha > 0;
+    },
+  };
+}
+
+// Orbiting heart particle for surrounding effect
+function createOrbitingHeart(
+  centerX: number,
+  centerY: number,
+  angle: number,
+  radius: number,
+  speed: number,
+  size: number
+): ParticleType & {
+  centerX: number;
+  centerY: number;
+  radius: number;
+} {
+  return {
+    x:
+      centerX +
+      Math.cos(angle) * radius,
+    y:
+      centerY +
+      Math.sin(angle) * radius,
+    centerX,
+    centerY,
+    radius,
+    color: "#ff69b4",
+    speed,
+    direction: angle,
+    vx: 0,
+    vy: 0,
+    gravity: 0,
+    friction: 1,
+    alpha: 1,
+    decay: 0,
+    size,
+    update() {
+      // Update angle for orbital motion
+      this.direction += this.speed;
+      // Calculate new position based on updated angle
+      this.x =
+        this.centerX +
+        Math.cos(this.direction) *
+          this.radius;
+      this.y =
+        this.centerY +
+        Math.sin(this.direction) *
+          this.radius;
+    },
+    draw(ctx) {
+      // Add sparkle effect
+      const sparkleAlpha =
+        0.7 +
+        Math.sin(this.direction * 5) *
+          0.3;
+      drawGlowingHeart(
+        ctx,
+        this.x,
+        this.y,
+        this.size,
+        "#ff1493",
+        "#ff69b4",
+        sparkleAlpha
+      );
+
+      // Add trailing sparkles
+      for (let i = 1; i <= 3; i++) {
+        const trailX =
+          this.x -
+          Math.cos(this.direction) *
+            i *
+            8;
+        const trailY =
+          this.y -
+          Math.sin(this.direction) *
+            i *
+            8;
+        const trailAlpha =
+          sparkleAlpha *
+          (0.8 - i * 0.2);
+        const trailSize =
+          this.size * (1 - i * 0.2);
+
+        if (trailAlpha > 0) {
+          drawGlowingHeart(
+            ctx,
+            trailX,
+            trailY,
+            trailSize,
+            "#ff1493",
+            "#ff69b4",
+            trailAlpha
+          );
+        }
+      }
+    },
+    isAlive() {
+      return true; // Always alive for continuous orbit
     },
   };
 }
@@ -544,6 +799,11 @@ function FireworksBackground({
     };
 
     const launchFirework = () => {
+      // Stop launching fireworks when AN effect starts
+      if (anExploded) {
+        return;
+      }
+
       const x = rand(
         maxX * 0.1,
         maxX * 0.9
@@ -591,6 +851,12 @@ function FireworksBackground({
     let anAnimating = false;
     let lastANParticlesTime = 0;
     let lastANScale = 0;
+
+    // Large heart outline effect with AN in center
+    let heartOutlineParticles: ParticleType[] =
+      [];
+    let largeHeartEffect = false;
+    let heartEffectStartTime = 0;
 
     // Cache AN positions for each scale to avoid redundant canvas work
     const anPositionsCache: Record<
@@ -656,6 +922,48 @@ function FireworksBackground({
       anCurrentScale = scale;
     }
 
+    function createLargeHeartOutlineEffect() {
+      const centerX = maxX / 2;
+      const centerY = maxY / 2;
+      const heartScale = 18; // Increased scale by 50% (from 12 to 18) for much larger heart
+      const startTime =
+        performance.now(); // Get start time for fade-in
+
+      heartOutlineParticles = [];
+
+      // Create more particles along the heart outline for denser effect
+      for (let i = 0; i < 300; i++) {
+        // Increased from 200 to 300 for even denser outline with larger heart
+        const t =
+          (Math.PI * 2 * i) / 300;
+        const heartX =
+          16 * Math.pow(Math.sin(t), 3);
+        const heartY =
+          13 * Math.cos(t) -
+          5 * Math.cos(2 * t) -
+          2 * Math.cos(3 * t) -
+          Math.cos(4 * t);
+
+        const x =
+          centerX + heartX * heartScale;
+        const y =
+          centerY - heartY * heartScale; // Negative to orient heart upright
+
+        heartOutlineParticles.push(
+          createHeartOutlineParticle(
+            x,
+            y,
+            t,
+            heartScale,
+            startTime // Pass start time for synchronized fade-in
+          )
+        );
+      }
+
+      largeHeartEffect = true;
+      heartEffectStartTime = startTime;
+    }
+
     setTimeout(() => {
       anExploded = true;
       anScale = 0.2;
@@ -666,6 +974,8 @@ function FireworksBackground({
       createPersistentANParticles(
         anScale
       );
+      // Start large heart effect at the same time as AN animation
+      createLargeHeartOutlineEffect();
     }, 8000);
 
     let animationFrameId: number;
@@ -712,15 +1022,22 @@ function FireworksBackground({
           createPersistentANParticles(
             anScale
           );
+        } // Draw large heart outline effect
+        if (largeHeartEffect) {
+          // Only draw heart outline particles, no stroke outline
+          for (const particle of heartOutlineParticles) {
+            particle.update();
+            particle.draw(ctx);
+          }
         }
-        // Update/draw persistent AN particles (no decay, just jitter)
+
+        // Update/draw persistent AN particles (stable, no decay)
         for (
           let i = 0;
           i < anParticles.length;
           i++
         ) {
           anParticles[i].update();
-          anParticles[i].alpha = 1; // Prevent fade out
           anParticles[i].draw(ctx);
         }
       }
